@@ -169,7 +169,7 @@ def save_history(history, path):
     def _save_as_json(history, path):
         with open(path, mode='w', encoding='utf-8') as file:
             json.dump(history, file, indent=4)
-    
+
     path_dir = os.path.dirname(path)
     os.makedirs(path_dir, exist_ok=True)
     if path.endswith('.csv'):
@@ -209,6 +209,8 @@ def main():
     opt = parser.parse_args()
     print('[Info]', opt)
     torch.manual_seed(opt.seed)
+
+    os.makedirs(opt.ckpt_path, exist_ok=True)
 
     save_path_template = opt.ckpt_path + '/mt5_{}_{}.ckpt'
     save_path = save_path_template.format(

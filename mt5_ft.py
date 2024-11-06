@@ -160,7 +160,7 @@ def save_history(history, path):
     Save the history to a CSV file.
     """
     with open(path, mode='w', newline='', encoding='utf-8') as file:
-        writer = csv.DictWriter(file, fieldnames=['subset', 'epoch', 'steps', 'loss', 'lr', 'sec'])
+        writer = csv.DictWriter(file, fieldnames=['subset', 'epoch', 'steps', 'loss', 'lr', 'sec', 'cm', 'acc', 'prec', 'recall', 'f1'])
         writer.writeheader()
         for record in history:
             writer.writerow(record)

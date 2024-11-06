@@ -208,7 +208,8 @@ def main():
     print('[Info]', opt)
     torch.manual_seed(opt.seed)
 
-    save_path = os.path.join(opt.ckpt_path, 'mt5_{}_{}.chkpt').format(
+    save_path_template = opt.ckpt_path + '/mt5_{}_{}.ckpt'
+    save_path = save_path_template.format(
         '_'.join(opt.lang), '_'.join(opt.form))
 
     # read instances from input file

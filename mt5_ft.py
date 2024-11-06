@@ -8,7 +8,7 @@ import random
 import argparse
 import numpy as np
 from sklearn.metrics import (
-    precision_score, recall_score, f1_score)
+    confusion_matrix, accuracy_score, precision_score, recall_score, f1_score)
 
 import tqdm
 import torch
@@ -152,7 +152,7 @@ def evaluate(model, loader, epoch, tokenizer):
 
     print('[Info] {:02d}-valid: acc {:.4f}'.format(epoch, acc))
 
-    return acc
+    return acc, confusion_matrix(pred, true).tolist()
 
 
 def save_history(history, path):
@@ -277,11 +277,25 @@ def main():
                         and scheduler.steps % len(train_loader) == 0
                         and scheduler.steps > 1000)
                     or scheduler.steps == 1000):
-                valid_acc = evaluate(
+                valid_acc, valid_cm = evaluate(
                     model,
                     valid_loader,
                     epoch,
                     tokenizer)
+                        
+                log_info = {
+                    "subset": "validation",
+                    "epoch": epoch,
+                    "acc": valid_acc,
+                    "cm": valid_cm,
+                    "lr": lr,
+                    "sec": time.time() - start
+                }
+                
+                start = time.time()
+                history.append(log_info)
+                save_history(history, opt.history_path)
+                        
 
                 if eval_acc < valid_acc:
                     eval_acc = valid_acc
@@ -305,11 +319,24 @@ def main():
             test_loader = MMFLUIterator(test_0, test_1, opt)
             print('[Info] {} insts of {}-{}'.format(
                 len(test_0), lang, form))
-            evaluate(
+            test_acc, test_cm = evaluate(
                 model,
                 test_loader,
                 0,
                 tokenizer)
+
+            log_info = {
+                "subset": "test",
+                "epoch": epoch,
+                "acc": test_acc,
+                "cm": test_cm,
+                "lr": lr,
+                "sec": time.time() - start
+            }
+            
+            start = time.time()
+            history.append(log_info)
+            save_history(history, opt.history_path)
 
     # Save training history to CSV
     save_history(history, opt.history_path)

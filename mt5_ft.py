@@ -19,7 +19,7 @@ from transformers import (
     MT5ForConditionalGeneration)
 
 from polynomial_lr_decay import PolynomialLRDecay
-import csv
+import csv, json
 
 logging.set_verbosity_error()
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -157,13 +157,26 @@ def evaluate(model, loader, epoch, tokenizer):
 
 def save_history(history, path):
     """
-    Save the history to a CSV file.
+    Save the history to a CSV or JSON file based on file extension.
     """
-    with open(path, mode='w', newline='', encoding='utf-8') as file:
-        writer = csv.DictWriter(file, fieldnames=['subset', 'epoch', 'steps', 'loss', 'lr', 'sec', 'cm', 'acc', 'prec', 'recall', 'f1'])
-        writer.writeheader()
-        for record in history:
-            writer.writerow(record)
+    def _save_as_csv(history, path):
+        with open(path, mode='w', newline='', encoding='utf-8') as file:
+            writer = csv.DictWriter(file, fieldnames=['subset', 'epoch', 'steps', 'loss', 'lr', 'sec', 'cm', 'acc', 'prec', 'recall', 'f1'])
+            writer.writeheader()
+            for record in history:
+                writer.writerow(record)
+
+    def _save_as_json(history, path):
+        with open(path, mode='w', encoding='utf-8') as file:
+            json.dump(history, file, indent=4)
+
+    if path.endswith('.csv'):
+        _save_as_csv(history, path)
+    elif path.endswith('.json'):
+        _save_as_json(history, path)
+    else:
+        raise ValueError("Unsupported file format. Please use .csv or .json")
+
 
 
 def main():

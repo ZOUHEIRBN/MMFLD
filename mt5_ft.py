@@ -201,12 +201,14 @@ def main():
         '-eval_step', default=1000, type=int, help='eval every x step')
     parser.add_argument(
         '-history_path', default='training_history.csv', type=str, help='path to save training history')
+    parser.add_argument(
+        '-ckpt_path', default='checkpoints', type=str, help='path to save trained checkpoints')
 
     opt = parser.parse_args()
     print('[Info]', opt)
     torch.manual_seed(opt.seed)
 
-    save_path = 'checkpoints/mt5_{}_{}.chkpt'.format(
+    save_path = os.path.join(opt.ckpt_path, 'mt5_{}_{}.chkpt').format(
         '_'.join(opt.lang), '_'.join(opt.form))
 
     # read instances from input file

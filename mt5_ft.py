@@ -10,6 +10,7 @@ import numpy as np
 from sklearn.metrics import (
     precision_score, recall_score, f1_score)
 
+import tqdm
 import torch
 from torch import cuda
 from transformers import logging
@@ -18,6 +19,7 @@ from transformers import (
     MT5ForConditionalGeneration)
 
 from polynomial_lr_decay import PolynomialLRDecay
+import csv
 
 logging.set_verbosity_error()
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -153,6 +155,17 @@ def evaluate(model, loader, epoch, tokenizer):
     return acc
 
 
+def save_history(history, path):
+    """
+    Save the history to a CSV file.
+    """
+    with open(path, mode='w', newline='', encoding='utf-8') as file:
+        writer = csv.DictWriter(file, fieldnames=['subset', 'epoch', 'steps', 'loss', 'lr', 'sec'])
+        writer.writeheader()
+        for record in history:
+            writer.writerow(record)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -173,6 +186,8 @@ def main():
         '-epoch', default=80, type=int, help='force stop at x epoch')
     parser.add_argument(
         '-eval_step', default=1000, type=int, help='eval every x step')
+    parser.add_argument(
+        '-history_path', default='training_history.csv', type=str, help='path to save training history')
 
     opt = parser.parse_args()
     print('[Info]', opt)
@@ -221,10 +236,11 @@ def main():
         power=2)
 
     loss_list = []
+    history = []
     start = time.time()
     eval_acc, tab = 0, 0
     patience = 6
-    for epoch in range(opt.epoch):
+    for epoch in tqdm.trange(opt.epoch):
         for batch in train_loader:
             src, tgt = map(lambda x: x.to(device), batch)
             optimizer.zero_grad()
@@ -238,12 +254,22 @@ def main():
 
             if scheduler.steps % opt.log_step == 0:
                 lr = optimizer.param_groups[0]['lr']
-                print('[Info] {:02d}-{:05d}: loss {:.4f} | '
-                      'lr {:.5f} | sec {:.3f}'.format(
-                    epoch, scheduler.steps, np.mean(loss_list),
-                    lr, time.time() - start))
+                log_info = {
+                    "subset": "train",
+                    "epoch": epoch,
+                    "steps": scheduler.steps,
+                    "loss": np.mean(loss_list),
+                    "lr": lr,
+                    "sec": time.time() - start
+                }
+                
+                print('[Info] {epoch:02d}-{steps:05d}: loss {loss:.4f} | '
+                  'lr {lr:.5f} | sec {sec:.3f}'.format(**log_info))
                 loss_list = []
                 start = time.time()
+                history.append(log_info)
+
+                save_history(history, opt.history_path)
 
             if ((len(train_loader) >= opt.eval_step
                  and scheduler.steps % opt.eval_step == 0)
@@ -284,6 +310,9 @@ def main():
                 test_loader,
                 0,
                 tokenizer)
+
+    # Save training history to CSV
+    save_history(history, opt.history_path)
 
 if __name__ == '__main__':
     main()

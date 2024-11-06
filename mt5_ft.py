@@ -169,7 +169,9 @@ def save_history(history, path):
     def _save_as_json(history, path):
         with open(path, mode='w', encoding='utf-8') as file:
             json.dump(history, file, indent=4)
-
+    
+    path_dir = os.path.dirname(path)
+    os.makedirs(path_dir, exist_ok=True)
     if path.endswith('.csv'):
         _save_as_csv(history, path)
     elif path.endswith('.json'):

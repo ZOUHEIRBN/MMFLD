@@ -211,7 +211,9 @@ def main():
     opt = parser.parse_args()
     launch(**dict(opt._get_kwargs()))
 
-def launch(seed, ckpt_path, base_model, lang, form, prompt, batch_size, lr, log_step, epoch, eval_step, history_path):
+def launch(lang, form, seed=42, prompt='', batch_size=32, lr=1e-4, log_step=100, epoch=80, eval_step=1000, 
+           history_path='training_history.csv', ckpt_path='checkpoints', base_model='google/mt5-base'
+        ):
     print('[Info]', locals())
     torch.manual_seed(seed)
 

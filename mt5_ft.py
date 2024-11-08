@@ -322,7 +322,7 @@ def main():
                 
                 start = time.time()
                 history.append(log_info)
-                save_history(history, opt.history_path)
+                save_history(history, history_path)
                         
 
                 if eval_acc < valid_acc:

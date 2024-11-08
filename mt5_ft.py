@@ -209,52 +209,54 @@ def main():
         '-base_model', default='google/mt5-base', type=str, help='base PLM for training')
 
     opt = parser.parse_args()
-    print('[Info]', opt)
-    torch.manual_seed(opt.seed)
+    launch(**dict(opt._get_kwargs()))
 
-    os.makedirs(opt.ckpt_path, exist_ok=True)
+def launch(seed, ckpt_path, base_model, lang, form, prompt, batch_size, lr, log_step, epoch, eval_step, history_path):
+    print('[Info]', locals())
+    torch.manual_seed(seed)
 
-    save_path_template = opt.ckpt_path + '/{}_{}_{}.ckpt'
+    os.makedirs(ckpt_path, exist_ok=True)
+
+    save_path_template = ckpt_path + '/{}_{}_{}.ckpt'
     save_path = save_path_template.format(
-        opt.base_model.replace('/', '_'),
-        '_'.join(opt.lang), '_'.join(opt.form))
+        base_model.replace('/', '_'),
+        '_'.join(lang), '_'.join(form))
 
-        
-    model_name = opt.base_model
-    history_path = os.path.join(opt.ckpt_path, opt.history_path)
+    model_name = base_model
+    history_path = os.path.join(ckpt_path, history_path)
     tokenizer = MT5TokenizerFast.from_pretrained(model_name)
 
     # read instances from input file
     train_src, train_tgt, valid_src, valid_tgt = [], [], [], []
-    for lang in opt.lang:
-        for form in opt.form:
-            path = 'data/train_{}_{}.0'.format(lang, form)
+    for lang_item in lang:
+        for form_item in form:
+            path = 'data/train_{}_{}.0'.format(lang_item, form_item)
 
             if not os.path.exists(path):
                 continue
 
             train_0, train_1 = read_insts(
-                'train', lang, form, opt.prompt, tokenizer)
+                'train', lang_item, form_item, prompt, tokenizer)
             valid_0, valid_1 = read_insts(
-                'valid', lang, form, opt.prompt, tokenizer)
+                'valid', lang_item, form_item, prompt, tokenizer)
             train_src.extend(train_0)
             train_tgt.extend(train_1)
             valid_src.extend(valid_0)
             valid_tgt.extend(valid_1)
             print('[Info] {} insts of train set in {}-{}'.format(
-                len(train_0), lang, form))
+                len(train_0), lang_item, form_item))
             print('[Info] {} insts of valid set in {}-{}'.format(
-                len(valid_0), lang, form))
+                len(valid_0), lang_item, form_item))
 
-    train_loader = MMFLUIterator(train_src, train_tgt, opt, tokenizer)
-    valid_loader = MMFLUIterator(valid_src, valid_tgt, opt, tokenizer)
+    train_loader = MMFLUIterator(train_src, train_tgt, batch_size, tokenizer)
+    valid_loader = MMFLUIterator(valid_src, valid_tgt, batch_size, tokenizer)
 
     model = MT5ForConditionalGeneration.from_pretrained(model_name)
     model = model.to(device).train()
 
     optimizer = torch.optim.Adam(
         filter(lambda x: x.requires_grad, model.parameters()),
-        lr=opt.lr, betas=(0.9, 0.98), eps=1e-09)
+        lr=lr, betas=(0.9, 0.98), eps=1e-09)
 
     scheduler = PolynomialLRDecay(
         optimizer,
@@ -268,7 +270,7 @@ def main():
     start = time.time()
     eval_acc, tab = 0, 0
     patience = 6
-    for epoch in tqdm.trange(opt.epoch):
+    for epoch_idx in tqdm.trange(epoch):
         for batch in train_loader:
             src, tgt = map(lambda x: x.to(device), batch)
             optimizer.zero_grad()
@@ -280,50 +282,49 @@ def main():
             optimizer.step()
             loss_list.append(loss.item())
 
-            if scheduler.steps % opt.log_step == 0:
-                lr = optimizer.param_groups[0]['lr']
+            if scheduler.steps % log_step == 0:
+                lr_current = optimizer.param_groups[0]['lr']
                 log_info = {
                     "subset": "train",
-                    "epoch": epoch,
+                    "epoch": epoch_idx,
                     "steps": scheduler.steps,
                     "loss": np.mean(loss_list),
-                    "lr": lr,
+                    "lr": lr_current,
                     "sec": time.time() - start
                 }
                 
                 print('[Info] {epoch:02d}-{steps:05d}: loss {loss:.4f} | '
-                  'lr {lr:.5f} | sec {sec:.3f}'.format(**log_info))
+                      'lr {lr:.5f} | sec {sec:.3f}'.format(**log_info))
                 loss_list = []
                 start = time.time()
                 history.append(log_info)
 
                 save_history(history, history_path)
 
-            if ((len(train_loader) >= opt.eval_step
-                 and scheduler.steps % opt.eval_step == 0)
-                    or (len(train_loader) < opt.eval_step
+            if ((len(train_loader) >= eval_step
+                 and scheduler.steps % eval_step == 0)
+                    or (len(train_loader) < eval_step
                         and scheduler.steps % len(train_loader) == 0
                         and scheduler.steps > 1000)
                     or scheduler.steps == 1000):
                 valid_acc, valid_cm = evaluate(
                     model,
                     valid_loader,
-                    epoch,
+                    epoch_idx,
                     tokenizer)
-                        
+                
                 log_info = {
                     "subset": "validation",
-                    "epoch": epoch,
+                    "epoch": epoch_idx,
                     "acc": valid_acc,
                     "cm": valid_cm,
-                    "lr": lr,
+                    "lr": lr_current,
                     "sec": time.time() - start
                 }
                 
                 start = time.time()
                 history.append(log_info)
                 save_history(history, history_path)
-                        
 
                 if eval_acc < valid_acc:
                     eval_acc = valid_acc
@@ -334,19 +335,20 @@ def main():
                     tab += 1
                     if tab == patience:
                         break
+
     # evaluation
     print('[Info] Evaluation')
     model.load_state_dict(torch.load(save_path))
-    for form in opt.form:
-        for lang in opt.lang:
-            path = 'data/test_{}_{}.0'.format(lang, form)
+    for form_item in form:
+        for lang_item in lang:
+            path = 'data/test_{}_{}.0'.format(lang_item, form_item)
             if not os.path.exists(path):
                 continue
             test_0, test_1 = read_insts(
-                'test', lang, form, opt.prompt, tokenizer)
-            test_loader = MMFLUIterator(test_0, test_1, opt, tokenizer)
+                'test', lang_item, form_item, prompt, tokenizer)
+            test_loader = MMFLUIterator(test_0, test_1, batch_size, tokenizer)
             print('[Info] {} insts of {}-{}'.format(
-                len(test_0), lang, form))
+                len(test_0), lang_item, form_item))
             test_acc, test_cm = evaluate(
                 model,
                 test_loader,
@@ -355,10 +357,10 @@ def main():
 
             log_info = {
                 "subset": "test",
-                "epoch": epoch,
+                "epoch": epoch_idx,
                 "acc": test_acc,
                 "cm": test_cm,
-                "lr": lr,
+                "lr": lr_current,
                 "sec": time.time() - start
             }
             
@@ -366,7 +368,7 @@ def main():
             history.append(log_info)
             save_history(history, history_path)
 
-    # Save training history to CSV
+    # Save training history to CSV or JSON
     save_history(history, history_path)
 
 if __name__ == '__main__':

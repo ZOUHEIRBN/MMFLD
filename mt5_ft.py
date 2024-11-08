@@ -25,11 +25,7 @@ logging.set_verbosity_error()
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 device = 'cuda' if cuda.is_available() else 'cpu'
 
-model_name = 'google/mt5-base'
-tokenizer = MT5TokenizerFast.from_pretrained(model_name)
-
-
-def read_insts(mode, lang, form, prompt, max_len=200, ups_num=5000):
+def read_insts(mode, lang, form, prompt, tokenizer, max_len=200, ups_num=5000):
     """
     Read instances
     """
@@ -66,27 +62,31 @@ def read_insts(mode, lang, form, prompt, max_len=200, ups_num=5000):
     return src, tgt
 
 
-def collate_fn(insts):
-    """
-    Pad the instance to the max seq length in batch
-    """
+def get_collate_fn(tokenizer):
+    def collate_fn(insts):
+        """
+        Pad the instance to the max seq length in batch
+        """
+    
+        pad_id = tokenizer.pad_token_id
+        max_len = max(len(inst) for inst in insts)
+    
+        batch_seq = [inst + [pad_id] * (max_len - len(inst))
+                     for inst in insts]
+        batch_seq = torch.LongTensor(batch_seq)
+    
+        return batch_seq
+    return collate_fn
 
-    pad_id = tokenizer.pad_token_id
-    max_len = max(len(inst) for inst in insts)
-
-    batch_seq = [inst + [pad_id] * (max_len - len(inst))
-                 for inst in insts]
-    batch_seq = torch.LongTensor(batch_seq)
-
-    return batch_seq
-
-
-def paired_collate_fn(insts):
-    src_inst, tgt_inst = list(zip(*insts))
-    src_inst = collate_fn(src_inst)
-    tgt_inst = collate_fn(tgt_inst)
-
-    return src_inst, tgt_inst
+def get_paired_collate_fn(tokenizer):
+    def paired_collate_fn(insts):
+        src_inst, tgt_inst = list(zip(*insts))
+        collate_fn = get_collate_fn(tokenizer)
+        src_inst = collate_fn(src_inst)
+        tgt_inst = collate_fn(tgt_inst)
+    
+        return src_inst, tgt_inst
+    return paired_collate_fn
 
 
 class MMFLUDataset(torch.utils.data.Dataset):
@@ -103,7 +103,7 @@ class MMFLUDataset(torch.utils.data.Dataset):
         return self.src_inst[idx], self.tgt_inst[idx]
 
 
-def MMFLUIterator(src, tgt, opt, shuffle=True):
+def MMFLUIterator(src, tgt, opt, tokenizer, shuffle=True):
     """
     Data iterator for classifier
     """
@@ -114,7 +114,7 @@ def MMFLUIterator(src, tgt, opt, shuffle=True):
             tgt_inst=tgt),
         num_workers=2,
         batch_size=opt.batch_size,
-        collate_fn=paired_collate_fn,
+        collate_fn=get_paired_collate_fn(tokenizer),
         shuffle=shuffle)
 
     return loader
@@ -205,6 +205,8 @@ def main():
         '-history_path', default='training_history.csv', type=str, help='path to save training history')
     parser.add_argument(
         '-ckpt_path', default='checkpoints', type=str, help='path to save trained checkpoints')
+    parser.add_argument(
+        '-base_model', default='google/mt5-base', type=str, help='base PLM for training')
 
     opt = parser.parse_args()
     print('[Info]', opt)
@@ -212,9 +214,15 @@ def main():
 
     os.makedirs(opt.ckpt_path, exist_ok=True)
 
-    save_path_template = opt.ckpt_path + '/mt5_{}_{}.ckpt'
+    save_path_template = opt.ckpt_path + '/{}_{}_{}.ckpt'
     save_path = save_path_template.format(
+        opt.base_model.replace('/', '_'),
         '_'.join(opt.lang), '_'.join(opt.form))
+
+        
+    model_name = opt.base_model
+    history_path = os.path.join(opt.ckpt_path, opt.history_path)
+    tokenizer = MT5TokenizerFast.from_pretrained(model_name)
 
     # read instances from input file
     train_src, train_tgt, valid_src, valid_tgt = [], [], [], []
@@ -226,9 +234,9 @@ def main():
                 continue
 
             train_0, train_1 = read_insts(
-                'train', lang, form, opt.prompt)
+                'train', lang, form, opt.prompt, tokenizer)
             valid_0, valid_1 = read_insts(
-                'valid', lang, form, opt.prompt)
+                'valid', lang, form, opt.prompt, tokenizer)
             train_src.extend(train_0)
             train_tgt.extend(train_1)
             valid_src.extend(valid_0)
@@ -238,8 +246,8 @@ def main():
             print('[Info] {} insts of valid set in {}-{}'.format(
                 len(valid_0), lang, form))
 
-    train_loader = MMFLUIterator(train_src, train_tgt, opt)
-    valid_loader = MMFLUIterator(valid_src, valid_tgt, opt)
+    train_loader = MMFLUIterator(train_src, train_tgt, opt, tokenizer)
+    valid_loader = MMFLUIterator(valid_src, valid_tgt, opt, tokenizer)
 
     model = MT5ForConditionalGeneration.from_pretrained(model_name)
     model = model.to(device).train()
@@ -289,7 +297,7 @@ def main():
                 start = time.time()
                 history.append(log_info)
 
-                save_history(history, opt.history_path)
+                save_history(history, history_path)
 
             if ((len(train_loader) >= opt.eval_step
                  and scheduler.steps % opt.eval_step == 0)
@@ -335,8 +343,8 @@ def main():
             if not os.path.exists(path):
                 continue
             test_0, test_1 = read_insts(
-                'test', lang, form, opt.prompt)
-            test_loader = MMFLUIterator(test_0, test_1, opt)
+                'test', lang, form, opt.prompt, tokenizer)
+            test_loader = MMFLUIterator(test_0, test_1, opt, tokenizer)
             print('[Info] {} insts of {}-{}'.format(
                 len(test_0), lang, form))
             test_acc, test_cm = evaluate(
@@ -356,10 +364,10 @@ def main():
             
             start = time.time()
             history.append(log_info)
-            save_history(history, opt.history_path)
+            save_history(history, history_path)
 
     # Save training history to CSV
-    save_history(history, opt.history_path)
+    save_history(history, history_path)
 
 if __name__ == '__main__':
     main()

@@ -103,7 +103,7 @@ class MMFLUDataset(torch.utils.data.Dataset):
         return self.src_inst[idx], self.tgt_inst[idx]
 
 
-def MMFLUIterator(src, tgt, opt, tokenizer, shuffle=True):
+def MMFLUIterator(src, tgt, batch_size, tokenizer, shuffle=True):
     """
     Data iterator for classifier
     """
@@ -113,7 +113,7 @@ def MMFLUIterator(src, tgt, opt, tokenizer, shuffle=True):
             src_inst=src,
             tgt_inst=tgt),
         num_workers=2,
-        batch_size=opt.batch_size,
+        batch_size=batch_size,
         collate_fn=get_paired_collate_fn(tokenizer),
         shuffle=shuffle)
 

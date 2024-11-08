@@ -202,6 +202,8 @@ def main():
     parser.add_argument(
         '-eval_step', default=1000, type=int, help='eval every x step')
     parser.add_argument(
+        '-dataset_path', default='data', type=str, help='path to load training data from')
+    parser.add_argument(
         '-history_path', default='training_history.csv', type=str, help='path to save training history')
     parser.add_argument(
         '-ckpt_path', default='checkpoints', type=str, help='path to save trained checkpoints')
@@ -212,7 +214,7 @@ def main():
     launch(**dict(opt._get_kwargs()))
 
 def launch(lang, form, seed=42, prompt='', batch_size=32, lr=1e-4, log_step=100, epoch=80, eval_step=1000, 
-           history_path='training_history.csv', ckpt_path='checkpoints', base_model='google/mt5-base'
+           dataset_path="data", history_path='training_history.csv', ckpt_path='checkpoints', base_model='google/mt5-base'
         ):
     print('[Info]', locals())
     torch.manual_seed(seed)
@@ -232,7 +234,7 @@ def launch(lang, form, seed=42, prompt='', batch_size=32, lr=1e-4, log_step=100,
     train_src, train_tgt, valid_src, valid_tgt = [], [], [], []
     for lang_item in lang:
         for form_item in form:
-            path = 'data/train_{}_{}.0'.format(lang_item, form_item)
+            path = '{}/train_{}_{}.0'.format(dataset_path, lang_item, form_item)
 
             if not os.path.exists(path):
                 continue
@@ -343,7 +345,7 @@ def launch(lang, form, seed=42, prompt='', batch_size=32, lr=1e-4, log_step=100,
     model.load_state_dict(torch.load(save_path))
     for form_item in form:
         for lang_item in lang:
-            path = 'data/test_{}_{}.0'.format(lang_item, form_item)
+            path = '{}/test_{}_{}.0'.format(dataset_path, lang_item, form_item)
             if not os.path.exists(path):
                 continue
             test_0, test_1 = read_insts(
@@ -372,6 +374,3 @@ def launch(lang, form, seed=42, prompt='', batch_size=32, lr=1e-4, log_step=100,
 
     # Save training history to CSV or JSON
     save_history(history, history_path)
-
-if __name__ == '__main__':
-    main()

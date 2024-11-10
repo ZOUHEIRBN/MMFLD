@@ -204,7 +204,7 @@ def main():
     parser.add_argument(
         '-dataset_path', default='data', type=str, help='path to load training data from')
     parser.add_argument(
-        '-history_path', default='training_history.csv', type=str, help='path to save training history')
+        '-history_path', default=None, type=str, help='path to save training history')
     parser.add_argument(
         '-ckpt_path', default='checkpoints', type=str, help='path to save trained checkpoints')
     parser.add_argument(

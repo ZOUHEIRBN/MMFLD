@@ -214,7 +214,7 @@ def main():
     launch(**dict(opt._get_kwargs()))
 
 def launch(lang, form, seed=42, prompt='', batch_size=32, lr=1e-4, log_step=100, epoch=80, eval_step=1000, 
-           dataset_path="data", history_path='training_history.csv', ckpt_path='checkpoints', base_model='google/mt5-base'
+           dataset_path="data", history_path=None, ckpt_path='checkpoints', base_model='google/mt5-base'
         ):
     print('[Info]', locals())
     torch.manual_seed(seed)
@@ -227,7 +227,7 @@ def launch(lang, form, seed=42, prompt='', batch_size=32, lr=1e-4, log_step=100,
         '_'.join(lang), '_'.join(form))
 
     model_name = base_model
-    history_path = os.path.join(ckpt_path, history_path)
+    history_path = os.path.join(ckpt_path, history_path) if history_path is not None else save_path.replace('.ckpt', '.json')
     tokenizer = MT5TokenizerFast.from_pretrained(model_name)
 
     # read instances from input file

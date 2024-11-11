@@ -312,7 +312,7 @@ def launch(lang, form, seed=42, prompt='', batch_size=32, lr=1e-4, log_step=100,
                     "sec": time.time() - start
                 }
                 
-                pbar.set_postfix(log_info))
+                pbar.set_postfix(log_info)
                 loss_list = []
                 start = time.time()
                 history.append(log_info)

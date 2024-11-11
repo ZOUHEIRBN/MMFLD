@@ -258,13 +258,15 @@ def launch(lang, form, seed=42, prompt='', batch_size=32, lr=1e-4, log_step=100,
     
         
     model = MT5ForConditionalGeneration.from_pretrained(model_name)
+    history = []
     start_schedule_from = 0
     if os.path.isfile(save_path):
         # Resume
         model.load_state_dict(torch.load(save_path))
         if os.path.isfile(history_path):
             with open(history_path) as f:
-                start_schedule_from = max(e.get('steps', 0) for e in json.load(f))
+                history = json.load(f)
+                start_schedule_from = max(e.get('steps', 0) for e in history)
     
     model = model.to(device).train()
     
@@ -280,12 +282,12 @@ def launch(lang, form, seed=42, prompt='', batch_size=32, lr=1e-4, log_step=100,
         power=2)
 
     loss_list = []
-    history = []
     start = time.time()
     eval_acc, tab = 0, 0
     patience = 6
-    for epoch_idx in tqdm.trange(epoch):
-        for batch in train_loader:
+    for epoch_idx in range(epoch):
+        pbar = tqdm.tqdm(train_loader, desc=f"Epoch {epoch_idx+1:02d}/{epoch}")
+        for batch in pbar:
             if scheduler.steps < start_schedule_from:
                 scheduler.step()
                 continue
@@ -310,8 +312,7 @@ def launch(lang, form, seed=42, prompt='', batch_size=32, lr=1e-4, log_step=100,
                     "sec": time.time() - start
                 }
                 
-                print('[Info] {epoch:02d}-{steps:05d}: loss {loss:.4f} | '
-                      'lr {lr:.5f} | sec {sec:.3f}'.format(**log_info))
+                pbar.set_postfix(log_info))
                 loss_list = []
                 start = time.time()
                 history.append(log_info)
@@ -347,7 +348,7 @@ def launch(lang, form, seed=42, prompt='', batch_size=32, lr=1e-4, log_step=100,
                 if eval_acc < valid_acc:
                     eval_acc = valid_acc
                     torch.save(model.state_dict(), save_path)
-                    print('[Info] The checkpoint has been updated.')
+                    pbar.set_postfix_str('The checkpoint has been updated.')
                     tab = 0
                 else:
                     tab += 1

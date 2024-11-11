@@ -8,7 +8,7 @@ import random
 import argparse
 import numpy as np
 from sklearn.metrics import (
-    confusion_matrix, accuracy_score, precision_score, recall_score, f1_score)
+    confusion_matrix, classification_report, accuracy_score, precision_score, recall_score, f1_score)
 
 import tqdm
 import torch
@@ -152,7 +152,7 @@ def evaluate(model, loader, epoch, tokenizer):
 
     print('[Info] {:02d}-valid: acc {:.4f}'.format(epoch, acc))
 
-    return acc, confusion_matrix(pred, true).tolist()
+    return acc, confusion_matrix(pred, true).tolist(), classification_report(pred, true, output_dict=True)
 
 
 def save_history(history, path):
@@ -161,7 +161,7 @@ def save_history(history, path):
     """
     def _save_as_csv(history, path):
         with open(path, mode='w', newline='', encoding='utf-8') as file:
-            writer = csv.DictWriter(file, fieldnames=['subset', 'epoch', 'steps', 'loss', 'lr', 'sec', 'cm', 'acc', 'prec', 'recall', 'f1'])
+            writer = csv.DictWriter(file, fieldnames=['subset', 'epoch', 'steps', 'loss', 'lr', 'sec', 'cm', 'clf_report', 'acc', 'prec', 'recall', 'f1'])
             writer.writeheader()
             for record in history:
                 writer.writerow(record)
@@ -255,9 +255,19 @@ def launch(lang, form, seed=42, prompt='', batch_size=32, lr=1e-4, log_step=100,
     train_loader = MMFLUIterator(train_src, train_tgt, batch_size, tokenizer)
     valid_loader = MMFLUIterator(valid_src, valid_tgt, batch_size, tokenizer)
 
+    
+        
     model = MT5ForConditionalGeneration.from_pretrained(model_name)
+    start_schedule_from = 0
+    if os.path.isfile(save_path):
+        # Resume
+        model.load_state_dict(torch.load(save_path))
+        if os.path.isfile(history_path):
+            with open(history_path) as f:
+                start_schedule_from = max(e.get('steps', 0) for e in json.load(f))
+    
     model = model.to(device).train()
-
+    
     optimizer = torch.optim.Adam(
         filter(lambda x: x.requires_grad, model.parameters()),
         lr=lr, betas=(0.9, 0.98), eps=1e-09)
@@ -276,6 +286,9 @@ def launch(lang, form, seed=42, prompt='', batch_size=32, lr=1e-4, log_step=100,
     patience = 6
     for epoch_idx in tqdm.trange(epoch):
         for batch in train_loader:
+            if scheduler.steps < start_schedule_from:
+                scheduler.step()
+                continue
             src, tgt = map(lambda x: x.to(device), batch)
             optimizer.zero_grad()
 
@@ -311,7 +324,7 @@ def launch(lang, form, seed=42, prompt='', batch_size=32, lr=1e-4, log_step=100,
                         and scheduler.steps % len(train_loader) == 0
                         and scheduler.steps > 1000)
                     or scheduler.steps == 1000):
-                valid_acc, valid_cm = evaluate(
+                valid_acc, valid_cm, valid_cr = evaluate(
                     model,
                     valid_loader,
                     epoch_idx,
@@ -322,6 +335,7 @@ def launch(lang, form, seed=42, prompt='', batch_size=32, lr=1e-4, log_step=100,
                     "epoch": epoch_idx,
                     "acc": valid_acc,
                     "cm": valid_cm,
+                    "clf_report": valid_cr,
                     "lr": lr_current,
                     "sec": time.time() - start
                 }
@@ -353,7 +367,7 @@ def launch(lang, form, seed=42, prompt='', batch_size=32, lr=1e-4, log_step=100,
             test_loader = MMFLUIterator(test_0, test_1, batch_size, tokenizer)
             print('[Info] {} insts of {}-{}'.format(
                 len(test_0), lang_item, form_item))
-            test_acc, test_cm = evaluate(
+            test_acc, test_cm, test_cr = evaluate(
                 model,
                 test_loader,
                 0,
@@ -364,6 +378,7 @@ def launch(lang, form, seed=42, prompt='', batch_size=32, lr=1e-4, log_step=100,
                 "epoch": epoch_idx,
                 "acc": test_acc,
                 "cm": test_cm,
+                "clf_report": test_cr,
                 "lr": lr_current,
                 "sec": time.time() - start
             }
